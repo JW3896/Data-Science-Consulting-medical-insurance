@@ -1,0 +1,714 @@
+---
+title: "Project 2"
+author: 'JW'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r source_functions,eval = FALSE}
+
+pkgs <- c("data.table", "DT", "rmarkdown", "Hmisc", "knitr", 
+    "prettydoc", "survival", "scales", "lubridate", "stringi", 
+    "shiny", "getPass", "ggplot2", "RPostgreSQL", "readxl", 
+    "flexdashboard")
+
+install.packages(pkgs)
+```
+
+```{r seed}
+set.seed(1702)
+```
+
+```{r libraries, message=FALSE}
+library("data.table")
+library("Hmisc")
+library("ggplot2")
+library("flexdashboard")
+library('DT')
+library(knitr)
+library(scales)
+library(viridis) 
+```
+
+```{r constants,eval = FALSE}
+
+```
+
+```{r functions,eval = FALSE}
+
+```
+
+```{r load_data}
+adherence<-fread(input='adherence.csv')
+baseline_measurements<-fread(input='baseline measurements.csv')
+```
+
+```{r explore_data, eval = FALSE}
+
+```
+
+
+```{r clean_data}
+#adherence<-na.omit(adherence)
+#baseline_mesurements<-na.omit(baseline_measurements)
+```
+
+# Instructions {.tabset}
+
+## Overview
+
+Your new client is a health insurance company.  After a lengthy review of their business, the insurance company has decided to prioritize improvements in medication adherence.  For our initial work, we will focus on patients with heart disease and how well they take their medications.
+
+Your team has received some modest training from a physician.  Here are the basic facts you need to know.  Heart disease is one of the most pervasive health problems, especially for older patients.  The initial diagnosis typically occurs too late.  Most patients only become aware that they have heart disease after experiencing an acute episode.  This can be limited to moderate symptoms, which might be treated by either medications or a light procedure.  In more severe cases, the patient might suffer a major event such as a myocardial infarction (heart attack) or need a significant surgical operation.  Whether minor or major, these events often include a hospitalization.  After the initial diagnosis, patients are typically prescribed a range of medications.  Three primary therapies include ACE inhibitors, beta blockers, and statins.
+
+The insurance company has helpfully compiled data on a large number of patients.  They have included a number of important clinical factors about their baseline conditions.  Then, starting from the time of their initial diagnoses of heart disease, the patients were tracked based upon which medications were filled at the pharmacy.  The medication records are presented in the form of panel data.  A single patient's records are linked by a unique identifier.  The time measurements represent the number of days since baseline.  Prescriptions are typically filled for 30 or 90 days of medications.  For this study, you may assume that the patients qualified for our study and reasonably could have been expected to be prescribed all of the medicines we are tracking.
+
+In this project, you will develop an approach to working with the information.  The client company has provided a list of questions they would like to address.  In addition to building the report, our team would also like you to present recommendations on how to improve upon the infrastructure.  We also want you to identify opportunities for the client to make use of the information you're working with in novel ways.
+
+This project is divided into 4 parts:
+
+* **Part 1:**  Summarizing the data.
+
+* **Part 2:**  Answering specific questions about medication adherence.
+
+* **Part 3:**  Generalizing and automating the reporting infrastructure for use beyond the current version.
+
+* **Part 4:**  Identifying opportunities.
+
+Please click on the other tabs for additional information.
+
+## Part 1:  Summary {.tabset}
+
+How would you summarize the data?  For each table, write 2-4 sentences with relevant information.  Briefly describe what is measured in the data and provide a summary of the information.  You can show a table or graphic, but keep things short.
+
+This part of the report will be directed to your internal team at the consulting company.  It is intended to document the sources of information that were used in the project.  It will also describe the data in less technical terms to team members who are not data scientists.  If another member of the team joins the project later, they will rely on your descriptions to gain familiarity with the data.
+
+### Baseline  {.tabset}
+
+#### Baseline data description
+
+The baseline measurements data contains the medical measurement information of 50000 unique patients from four different regions,South, Northeast, Midwest, West. They age from 41 years old to 65 years old, and 61 is the average level.
+
+```{r baseline description}
+summary(baseline_measurements)
+nrow(unique(baseline_measurements,by='id'))
+```
+
+#### Baseline data visualization
+
+According to the pie chart, gender distribution in the baseline measurements data is very balanced.
+From the second one, it shows that the number of patients from west is the highest, and the number of patients from south is the lowser. 
+
+```{r baseline Visualization}
+#print(unique(baseline_measurements$sex))
+data.frame(baseline_measurements[, .(count=.N),by='sex'])
+baseline_sex<-data.frame(baseline_measurements[, .(count=.N),by='sex'])
+vs0<- ggplot(baseline_sex, aes(x=sex, y=count,fill=sex))+ geom_bar(width = 1, stat = "identity")+coord_polar("x",start=0)+scale_fill_brewer(palette="PuBu")+theme_minimal()
+vs0
+#print(unique(baseline_measurements$region))
+data.frame(baseline_measurements[, .(count=.N),by='region'])
+baseline_region<-data.frame(baseline_measurements[, .(count=.N),by='region'])
+vs1<- ggplot(baseline_region, aes(x=region, y=count,fill=region))+ geom_bar(width = 0.5, stat =                                                             "identity")+coord_polar("x",start=0)+scale_fill_brewer(palette='Purples')+theme_minimal()
+vs1
+```
+
+
+### Adherence {.tabset}
+
+#### Adherence data description
+
+According to the data summary, there are 1561265 medication records from 50000 patients starting from the day of their baseline measurement. Three primary therapies include ACE inhibitors, beta blockers, and satin, the adherence data tracks the madications of the three therapis every 30 days, but prescriptions are typically filled for 30 or 90 days of medications. 
+```{r Adherence description}
+
+#head(adherence)
+summary(adherence)
+nrow(adherence)
+length(unique(adherence$id))
+```
+
+
+
+#### Adherence data visualization
+
+The table below delivers information related with the medication frequency rate of each therapy，statin is the most frequently used therapy.
+
+```{r Adherence visualization}
+dat_ace=data.frame(prop.table(table(adherence$ace)))
+dat_bb= data.frame(prop.table(table(adherence$bb)))
+dat_statin=data.frame(prop.table(table(adherence$statin)))
+adh_fre<-data.frame(presc=c('ace','bb','statin'),
+                   medication_0=c(0.4856037,0.4015795,0.3340759),
+                   medication_1=c(0.5143963,0.5984205,0.6659241	))
+adh_fre
+```
+
+
+
+
+## Part 2:  Specific Questions {.tabset}
+
+In addition to your summary, our team has identified specific questions of interest.  Please provide these answers in output that is easy to read (e.g. tables).
+
+This part of the report will be directed to medical case management teams throughout the client's company.  The idea is to give them the useful information they need to act on the specific questions they posed.  Plan your communication accordingly.
+
+
+**Notes**:  Using data.table, most of these calculations can be solved in a moderate number of steps.  Many of the questions may require information from multiple tables.  Use the **merge** function to combine tables as needed.  HTML-friendly tables can be constructed using the **datatable** function in the **DT** package.
+
+These questions were carefully crafted based upon the client's needs.  It is important to answer them based on what is stated.  To that end, please **read each question closely** and answer it accordingly.
+
+The questions are listed in the tabs below.
+
+
+### Q1 {.tabset}
+
+What percentage of the patients had at least 1 year of records?  
+nrow(adherence)
+```{r q1 1}
+adherence[,duration:=t2-t1,by='id']
+adherence[,records:=sum(duration),by='id']
+unique_records<-adherence[!duplicated(adherence$id),]
+record_id<-unique_records[records>=365,.(count=.N),]
+(record_id$count)/length(unique(adherence$id))
+```
+What was the median length of followup?
+```{r q1 2}
+median(unique_records$records)
+```
+
+### Q2
+
+For patients with at least 1 year of follow-up, their **one-year adherence** to a medication is the proportion of days in the first year after diagnosis during which the medication was possessed.  For each medication, what was the average one-year adherence for the population?  Use only the patients with at least 1 year of follow-up records.
+
+```{r q2}
+adherence_1<-adherence[records>365 & t1<365,]
+adherence_1$t2[adherence_1$t2>365]<-365
+adherence_1<-adherence_1[,duration_year:=(t2-t1)]
+
+adherence1_ace<-adherence_1[ace==1,.(one_year_adherence=sum(duration_year)/365),by = c("id")]
+mean(adherence1_ace$one_year_adherence)
+
+adherence1_bb<-adherence_1[bb==1,.(one_year_adherence=sum(duration_year)/365),by = c("id")]
+mean(adherence1_bb$one_year_adherence)
+
+adherence1_statin<-adherence_1[statin==1,.(one_year_adherence=sum(duration_year)/365),by = c("id")]
+mean(adherence1_statin$one_year_adherence)
+
+```
+
+### Q3
+
+How many medications are the patients taking?  For patients with at least one year of follow-up, use their records during the first year after the initial diagnosis.  Calculate the overall percentage distribution of the days that the patients are taking 0, 1, 2, and all 3 medications.
+
+```{r q3}
+
+adherence[,medications:=ace+bb+statin]
+#since all record start with 0, for record less than 365 , t2<365 for sure;t2>365,using first year,replace t2 with 365. with condition t1<365 since we only want first year
+dat3<-adherence[t1<=365,]
+dat3$t2[dat3$t2>365]<-365
+dat3[,duration_year:=t2-t1]
+distribution<-dat3[,.(days=sum(duration_year)),by=c("medications")]
+distribution[,distribution:=days/sum(days)]
+distribution
+```
+
+### Q4 {.tabset}
+
+What is the impact of the baseline factors on the one-year adherence to each medication?    Use only the patients with at least 1 year of follow-up records.  Fit separate linear regression models for each medicine.  (You can use the fit.model function provided in the template.)  Then briefly comment on the results.
+
+```{r one.year.adherence.model.dat}
+
+```
+
+#### ACE Inhibitors
+
+In this model, it can be seen that p-value of the F-statistic is < 2.2e-16, which is highly significant. This means that, at least, one of the predictor variables is significantly related to the outcome variable. 
+
+Comparing the t value, we find the fact that patients from different and ages regions are associated to changes in one year adherence to each medication, besides, the baseline condition has the most significant effect on one year adherence. 
+
+Older men moderate symptoms or light procedure are more likely to have lower one year adherence on ACE Inhibitors. Patients from West and Northwest tend to have higher one year adherence on ACE Inhibitors than patients from Soutb.
+
+```{r q4_ace}
+model_ace<-merge(baseline_measurements,adherence1_ace,by =c("id"))
+
+model_ace<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition,data=model_ace)
+
+summary(model_ace)
+```
+
+#### Beta Blockers
+
+In this model, it can be seen that p-value of the F-statistic is < 2.2e-16, which is highly significant. This means that, at least, one of the predictor variables is significantly related to the outcome variable. Age, gender and baseline condition are the most significant factors that affect medical adherence. 
+
+comparing the t value, we find the fact that patients older men moderate symptoms or light procedure are more likely to have lower one year adherence on Beta Blockers. 
+
+Patients from West and Northwest tend to have higher one year adherence on Beta Blockers than patients from South. But whether they have diabetes has more significant effects. 
+
+```{r q4_bb}
+model_bb<-merge(baseline_measurements,adherence1_bb,by =c("id"))
+
+model_bb<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition,data=model_bb)
+
+summary(model_bb)
+```
+
+#### Statins
+
+In this model, it can be seen that p-value of the F-statistic is < 2.2e-16, which is highly significant. Age, gender and baseline condition are the most significant factors that affect medical adherence.The change of factor region has little association with the result of adherence. 
+
+comparing the t value, we find the fact that patients older men moderate symptoms or light procedure are more likely to have lower one year adherence on Beta Blockers. 
+
+Whether patients have diabetes significantly change the one year adherence to Statins. 
+
+```{r q4_statin}
+model_statins<-merge(baseline_measurements,adherence1_statin,by =c("id"))
+
+model_statins<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition,data=model_statins)
+
+summary(model_statins)
+```
+
+
+### Q5
+
+For each medicine, what percentage of the patients filled a prescription in the first two weeks after their initial diagnoses?
+
+```{r q5}
+
+first_adherence_ace<-adherence[ace==1,.(first=min(t1)<=14),by =c("id")]
+patients_ace=first_adherence_ace[first==TRUE,.N]
+first_ace=patients_ace/nrow(unique(baseline_measurements,by='id'))
+first_ace
+
+first_adherence_bb<-adherence[bb==1,.(first=min(t1)<=14),by =c("id")]
+patients_bb=first_adherence_bb[first==TRUE,.N]
+first_bb=patients_bb/nrow(unique(baseline_measurements,by='id'))
+first_bb
+
+first_adherence_statins<-adherence[statin==1,.(first=min(t1)<=14),by =c("id")]
+patients_statins=first_adherence_statins[first==TRUE,.N]
+first_statins=patients_statins/nrow(unique(baseline_measurements,by='id'))
+first_statins
+
+```
+
+### Q6 {.tabset}
+
+Now let's compare those who filled a presciption for a statin in the first two weeks after diagnosis to those who did not.  Do these two groups have different baseline covariates?  Compare the groups based on their ages.  Then compare the distribution of baseline conditions in the two groups. For continuous variables, compare their means using a t-test.  For the categorical variables, compare their distributions using a chi-squared test.  
+
+#### Age
+
+The average age of patients who didn't filled the statin prescriptions in the first two weeks after baseline measurements is higher than those who did it. 
+```{r q6_age}
+adherence_statin_In2weeks<-adherence[,prescription:=(t1<=14 & statin==1)]
+adherence_statin_In2weeks<-adherence_statin_In2weeks[,.(count=sum(prescription)),by = id]
+adherence_statin_In2weeks<-adherence_statin_In2weeks[,.(id,filled=(count>0)),]
+dat_merge<-merge(baseline_measurements,adherence_statin_In2weeks,by=c("id"))
+dat_merge
+t.test(age~filled,data=dat_merge)
+```
+
+#### Baseline Conditions
+
+The p-value of the Chia-square test shows that whether patients fille in the statin prescription is significantly associated with baseline condition. 
+```{r q6_baseline.condition}
+chisq.test(table(dat_merge$baseline.condition,dat_merge$filled),correct=FALSE)
+```
+
+### Q7 {.tabset}
+
+How do the baseline factors of age, sex, region, diabetes, and baseline condition impact the likelihood of initiating a medication within 14 days?  For each medicine, fit a logistic regression model and comment on the results.
+
+
+#### ACE Inhibitors
+
+According to the model summary, the baseline condition has the most significant ipmact on initiating an adherence to the medication ACE Inhibitors in 14 days. People with diabetes from the west are more likely to initiate this medication. In addition, older man with moderate sypmtoms or light procedure are more likely to not initiate this medication.
+```{r q7_ace}
+adherence_0<-adherence[ace==1,]
+adherence_14d<-adherence_0[,initiate_day:=min(t1),by='id']
+adherence_14d<-adherence_14d[initiate_day<=14]
+adherence_14d<-adherence_14d[,.(id=unique(id))]
+adherence_14d<-adherence_14d[,likelihood:=TRUE]
+dat7<-merge(baseline_measurements, adherence_14d,all.x=TRUE)
+dat7$likelihood[is.na(dat7$likelihood)]<-FALSE
+model7<-glm(likelihood~age+sex+region+diabetes+baseline.condition, data=dat7,family = "binomial")
+summary(model7)
+```
+
+#### Beta Blockers
+
+
+According to the model summary below, people with diabetes from Northeast are most likely to initiate the medication Beta Blockers, by contrast, male patients with an older age from the south, and of whom the baseline condition has moderate slymptoms and light procedure, are less likely to to initiate the Beta Blockers medication within 14 days.
+```{r q7_bb}
+adherence_1<-adherence[bb==1,]
+adherence_14d<-adherence_1[,initiate_day:=min(t1),by='id']
+adherence_14d<-adherence_14d[initiate_day<=14]
+adherence_14d<-adherence_14d[,.(id=unique(id))]
+adherence_14d<-adherence_14d[,likelihood:=TRUE]
+dat7<-merge(baseline_measurements, adherence_14d,all.x=TRUE)
+dat7$likelihood[is.na(dat7$likelihood)]<-FALSE
+model8<-glm(likelihood~age+sex+region+diabetes+baseline.condition, data=dat7,family = "binomial")
+summary(model8)
+```
+
+#### Statins
+
+According to the model summary below, patients with diabetes from the northeast are most likely to initiate the Statin medication in 14 days. Besides, older man with moderate symptoms and light procedure are less likely to inititate this medication in 14 days.
+```{r q7_statins}
+adherence_2<-adherence[statin==1,]
+adherence_14d<-adherence_2[,initiate_day:=min(t1),by='id']
+adherence_14d<-adherence_14d[initiate_day<=14]
+adherence_14d<-adherence_14d[,.(id=unique(id))]
+adherence_14d<-adherence_14d[,likelihood:=TRUE]
+dat7<-merge(baseline_measurements, adherence_14d,all.x=TRUE)
+dat7$likelihood[is.na(dat7$likelihood)]<-FALSE
+model9<-glm(likelihood~age+sex+region+diabetes+baseline.condition, data=dat7,family = "binomial")
+summary(model9)
+```
+
+### Q8 {.tabset}
+
+For those who did fill their prescriptions within 2 weeks, how long does it typically take to fill that first prescription after the initial diagnosis?  For each medicine, provide the mean, median, and standard deviation in units of days.
+
+```{r q8}
+
+```
+
+#### ACE Inhibitors
+
+```{r q8_ace}
+adherence_2w<-adherence[ace==1,]
+adherence_2w<-adherence_2w[,.(initiate_prescription=min(t1)),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14]
+adherence_2w
+ #those who did fill the prescription in 2 weeks 
+mean(adherence_2w$initiate_prescription)
+median(adherence_2w$initiate_prescription)
+sd(adherence_2w$initiate_prescription)
+```
+
+
+#### Beta Blockers
+
+```{r q8_bb}
+adherence_2w<-adherence[bb==1,]
+adherence_2w<-adherence_2w[,.(initiate_prescription=min(t1)),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14]
+adherence_2w
+ #those who did fill the prescription in 2 weeks 
+mean(adherence_2w$initiate_prescription)
+median(adherence_2w$initiate_prescription)
+sd(adherence_2w$initiate_prescription)
+```
+
+
+#### Statins
+
+```{r q8_statin}
+adherence_2w<-adherence[statin==1,]
+adherence_2w<-adherence_2w[,.(initiate_prescription=min(t1)),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14]
+adherence_2w
+ #those who did fill the prescription in 2 weeks 
+mean(adherence_2w$initiate_prescription)
+median(adherence_2w$initiate_prescription)
+sd(adherence_2w$initiate_prescription)
+```
+
+### Q9 {.tabset}
+
+How does filling a prescription in the first two weeks impact adherence?  If we want to see that a medicine is working, we need to start the observation after the patient has had a chance to fill the prescription.  To answer this question, we will follow a number of steps:
+
+1.  Identify which patients filled a prescription in the first two weeks.
+
+2.  Then, for each patient with at least 379 days of followup, measure the one-year adherence rate (see Question 2) **starting at two weeks after the initial diagnosis**.  This interval will begin at day 14 and last for 365 days.
+
+**one-year adherence** to a medication is the proportion of days in the first year after diagnosis during which the medication was possessed.
+
+3.  Fit a linear regression model of this one-year adherence including the baseline covariates (age, sex, region, diabetes, baseline condition) and an indicator of whether this patient filled a prescription for the medicine in the first two weeks.
+
+Perform this analysis for each medicine and comment on the results.
+
+```{r q9}
+
+```
+
+#### ACE Inhibitors
+
+
+According to the model summary, we find that filling a ACE Inhibitors prescription in the first two weeks would significantly impact adherence. Patients filling the prescription in the first 14 days would significantl decrease the one year adherence rate, which means that patients who fill the ACE Inhibitors prescription earlier take less medication in the future. This medicine is working. 
+```{r q9_ace}
+#Identify which patients filled a prescription in the first two weeks.
+adherence_2w<-adherence[ace==1,]
+adherence_2w<-adherence_2w[,initiate_prescription:=min(t1),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14,by='id']
+adherence_2w
+
+#Then, for each patient with at least 379 days of followup, 
+
+adherence_2w<-adherence_2w[max(t2)>=379,by='id']
+
+
+#measure the one-year adherence rate (see Question 2) **starting at two weeks after the initial diagnosis**.  This interval will begin at day 14 and last for 365 days.
+adherence_2w[t2<=14,followup:=0]
+adherence_2w[t1<14 & t2>=14 & t2<=379,followup:=t2-14]
+adherence_2w[t1<14 & t2>379, follow_up:=365]
+adherence_2w[t1>=14 & t1<379 & t2<=379,followup:=t2-t1]
+adherence_2w[t1>=14 & t1<379 & t2>379,followup:=379-t1]
+adherence_2w[t1>379,followup:=0]
+
+# measure the one-year adherence rate 
+dat9<-adherence_2w[,.(initiate_prescription,one_year_adherence=sum(followup)/365),by = id]
+
+#Fit a linear regression model 
+dat9<-merge.data.table(baseline_measurements,dat9)
+dat9
+model9<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition+initiate_prescription,data=dat9)
+summary(model9)
+
+```
+
+#### Beta Blockers
+
+According to the model summary, we find that filling a ACE Inhibitors prescription in the first two weeks would significantly impact adherence. Patients filling the prescription in the first 14 days would significantl decrease the one year adherence rate, which means that patients who fill the ACE Inhibitors prescription earlier take less medication in the future. This medicine is working. 
+```{r q9_bb}
+#Identify which patients filled a prescription in the first two weeks.
+adherence_2w<-adherence[bb==1,]
+adherence_2w<-adherence_2w[,initiate_prescription:=min(t1),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14,by='id']
+adherence_2w
+
+#Then, for each patient with at least 379 days of followup, 
+adherence_2w<-adherence_2w[,followup:=t2-t1]
+adherence_2w<-adherence_2w[max(t2)>=379,by='id']
+adherence_2w
+
+#measure the one-year adherence rate (see Question 2) **starting at two weeks after the initial diagnosis**.  This interval will begin at day 14 and last for 365 days.
+adherence_2w[t2<=14,followup:=0]
+adherence_2w[t1<14 & t2>=14 & t2<=379,followup:=t2-14]
+adherence_2w[t1<14 & t2>379, follow_up:=365]
+adherence_2w[t1>=14 & t1<379 & t2<=379,followup:=t2-t1]
+adherence_2w[t1>=14 & t1<379 & t2>379,followup:=379-t1]
+adherence_2w[t1>379,followup:=0]
+
+# measure the one-year adherence rate 
+dat9<-adherence_2w[,.(initiate_prescription,one_year_adherence=sum(followup)/365),by = id]
+
+#Fit a linear regression model 
+dat9<-merge.data.table(baseline_measurements,dat9)
+dat9
+model9<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition+initiate_prescription,data=dat9)
+summary(model9)
+
+```
+
+#### Statins
+
+According to the model summary, we find that filling a ACE Inhibitors prescription in the first two weeks would significantly impact adherence. Patients filling the prescription in the first 14 days would significantl decrease the one year adherence rate, which means that patients who fill the ACE Inhibitors prescription earlier take less medication in the future. This medicine is working. 
+```{r q9_statin}
+#Identify which patients filled a prescription in the first two weeks.
+adherence_2w<-adherence[statin==1,]
+adherence_2w<-adherence_2w[,initiate_prescription:=min(t1),by='id']
+adherence_2w<-adherence_2w[initiate_prescription<=14,by='id']
+adherence_2w
+
+#Then, for each patient with at least 379 days of followup, 
+adherence_2w<-adherence_2w[,followup:=t2-t1]
+adherence_2w<-adherence_2w[max(t2)>=379,by='id']
+adherence_2w
+
+#measure the one-year adherence rate (see Question 2) **starting at two weeks after the initial diagnosis**.  This interval will begin at day 14 and last for 365 days.
+adherence_2w[t2<=14,followup:=0]
+adherence_2w[t1<14 & t2>=14 & t2<=379,followup:=t2-14]
+adherence_2w[t1<14 & t2>379, follow_up:=365]
+adherence_2w[t1>=14 & t1<379 & t2<=379,followup:=t2-t1]
+adherence_2w[t1>=14 & t1<379 & t2>379,followup:=379-t1]
+adherence_2w[t1>379,followup:=0]
+
+# measure the one-year adherence rate 
+dat9<-adherence_2w[,.(initiate_prescription,one_year_adherence=sum(followup)/365),by = id]
+
+#Fit a linear regression model 
+dat9<-merge.data.table(baseline_measurements,dat9)
+dat9
+model9<-lm(one_year_adherence~age+sex+region+diabetes+baseline.condition+initiate_prescription,data=dat9)
+summary(model9)
+
+```
+
+To conclude, filling a prescription in the first two weeks would significantly impact adherence in the future, and by comparing the t value of three models, we find ACE Inhibitors is likely to be the most effective medicine among the three. 
+
+### Q10 {.tabset}
+
+Once a patient starts a medication, how long do they continuously have a filled prescription?  For each patient who filled a medication, start with the first filled prescription and count the duration of days until a gap occurs or follow-up ends.  Then provide the mean, median, and standard deviation for these durations.  Do this separately for each medicine.
+
+```{r q10}
+
+```
+
+#### ACE Inhibitors
+
+```{r q10_ace, message=FALSE}
+adherence<-fread(input='adherence.csv') 
+adherence_10<-adherence[ace==1,]
+#add the follow up only when they are continuous
+adherence_10<-adherence_10[,followup_1:=sum(t2-t1),by='id']
+adherence_10<-adherence_10[,totalday_1:=max(t2)-min(t1),by='id']
+adherence_10<-adherence_10[followup_1==totalday_1,]
+adherence_10
+adherence_10<-adherence_10[,.(id,followup_1)]
+adherence_10<-adherence_10[!duplicated(id),]
+adherence_10
+#Then provide the mean, median, and standard deviation for these durations.
+mean(adherence_10$followup_1)
+median(adherence_10$followup_1)
+sd(adherence_10$followup_1)
+```
+
+#### Beta Blockers
+```{r q10_bb}
+adherence_10<-adherence[bb==1,]
+#add the follow up only when they are continuous
+adherence_10<-adherence_10[,followup_1:=sum(t2-t1),by='id']
+adherence_10<-adherence_10[,totalday_1:=max(t2)-min(t1),by='id']
+adherence_10<-adherence_10[followup_1==totalday_1,]
+adherence_10<-adherence_10[,.(id,followup_1)]
+adherence_10<-adherence_10[!duplicated(id),]
+adherence_10
+#Then provide the mean, median, and standard deviation for these durations.
+mean(adherence_10$followup_1)
+median(adherence_10$followup_1)
+sd(adherence_10$followup_1)
+```
+
+#### Statins
+```{r q10_statin}
+adherence_10<-adherence[statin==1,]
+#add the follow up only when they are continuous
+adherence_10<-adherence_10[,followup_1:=sum(t2-t1),by='id']
+adherence_10<-adherence_10[,totalday_1:=max(t2)-min(t1),by='id']
+adherence_10<-adherence_10[followup_1==totalday_1]
+adherence_10<-adherence_10[,.(id,followup_1)]
+adherence_10<-adherence_10[!duplicated(id),]
+adherence_10
+#Then provide the mean, median, and standard deviation for these durations.
+mean(adherence_10$followup_1)
+median(adherence_10$followup_1)
+sd(adherence_10$followup_1)
+```
+
+
+## Part 3:  Generalization {.tabset}
+
+This part of the report will be directed internally to your team's engagement manager.  The idea is to present these approaches to your team.  The work will then be conveyed to the client's technical team and middle managers who are working closely with you on the project.  Plan your communication accordingly.
+
+
+### Q1 
+
+Did you see any problems with the data set?  If so, whom would you report them to, and what would you do to address them?  What would be different about the next version of the data?
+  
+1. The region category is a little bit confusing because the data related to midwest and the west is kind of overlapping, it is better to clarify the classification of regions by state and city. 
+
+2. The baseline_measurements information includes various clinical factors about the baseline conditions, which is very supportive for analyzing how these factors affect patients adherence to different medications. However, basic factors like gender, region and age wouldn't help the insurance company drive in-depth insights associated with the medication and their insurance product. Therefore, it's better to add more information.
+ * What kind of insurance does this patient use ? How much does it cover the hopitalization of the disease? 
+ * What other diseases which are possible to incur heart attack does the patient have? 
+ 
+3. I would birng up these questions within the team, and talk with the internal managers. After the questions are discusses, we would report 
+these questions to the client. 
+
+
+### Q2
+
+If the organization wants to monitor this kind of information over time, what would they need to provide, and at what frequency?
+
+They would need to change the way of collecting these informations. Most of the informaton would come from transaction records and hospital sharing data. They need to pay more attention to collecting data above by closely mornitoring these resources. In addition, they would need to save and manage these data more efficiently. Optimizing the relational database would make the infrastructure more clear. All the static data should be updated annually. The comapany should also put more efforts and resources in extracting, transforming and loading the dynamic records data monthly. An ETL pipeline needs to be continuously optimized by the technical department. 
+
+  
+### Q3
+
+How would you build on the reporting capabilities that you have created?  What would you design next?
+
+I would do visualizations based on current results and deliver insights by doing business analysis. In addition, more questions possible for research would be added in the report. 
+
+questions: 
+
+1. What is the median and average length of the follow up for each medication? 
+
+2. For patients with major heart attack and operation, what is the one year adherence to each medication ? (at least one year of follow up records)
+
+3. For patients with major heart attack and operation, and filled in the prescription in 14 days, what is the distribution of each medication? 
+
+4. For patients with major heart attack and operation, what is the one year adherence to each medication ? (at least one year of follow up records)
+
+5. For patients with moderate symptoms or light procedure, what is the one year adherence to each medication ? (at least one year of follow up records)
+
+6. What is the impact of the baseline factors on the one-year adherence to each medication?  Fit separate random forest models for each medicine.
+
+7. How do these baseline factors affect baseline conditions? Apply logistic regression model.
+
+
+  
+  
+## Part 4:  Opportunities {.tabset}
+  
+This part of the report will be directed externally to your client's senior leadership.  Your work will help to determine the future direction of the project and the company's contract with this client.  Plan your communication accordingly.
+
+### Q1
+
+What are some opportunities to learn valuable information and inform strategic decisions?  List a number of questions that you might explore.
+
+1. What is the customer income distribution, gender distribution and region distribution of each insurance product ?
+
+2. For users of each insurance product, what is the distribution of baseline conditions ?
+
+3. What is the price, and the gross profit rate of each insurance product ? 
+
+4. what is the price of each medication therapy ? and what medications are included in the each insurance? 
+
+5. General feedbacks of insurance products from patients and the treatment feedback of three medications from doctors.
+
+6. For potential customers healthy/already diagnosed with diseases that are inclined to result in heart diseases, what services are included in the insurance. How much does the insurance cover the cost of medications for each population ? 
+ 
+
+### Q2
+
+What kind of interventions would you build to help improve medication adherence?  Which populations would you work with?  How would you help them?
+  
+Based on the analysis, we conclude as follows:  
+
+1. Filling a prescription in the first two weeks would significantly impact adherence in the future.
+
+2. ACE Inhibitors is likely to be the most effective medicine among the three within  the first 14 days adherence.
+
+3. Patients with diabetes and thoses who have major heart attack or operation tend to have higher adherence rate and get longer treatment. 
+
+Interventions:
+
+1. Including three medications, especially ACE Inhibitors in more insurance products which cover heart disease treatment
+
+2. For older patients with diabetes, heeart attack, increase the fee coverage rate of three medications, especially ACE Inhibitors if they fill the prescription in the first 14 days. 
+
+3. Enhancing marketing strategy targeting older patients with diabetes, delivering analytic results when marketing. 
+
+4. For older female patients with moderate symptoms or light procedure, increase the fee coverage rate of Statins and Beta Blockers. 
+
+
+### Q3
+  
+How would you approach other decisionmakers within the organization to assess their priorities and help them better utilize the available information?
+  
+1. Approach other decisionmakers by automated reporting through email. Incorporate valuable information related to their top priorities.
+
+2. Marketing department leaders pay more attention to customer demographics and segmentation. Analytic visualizations of the demographic and in-depth segmentation results would help them understand target customers, adjust the marketing strategies. Older customers with diabetes and heart diseases are their customers.
+
+3. Report to the technical department leaders about the limitation of currently analysis, and suggestions regarding database upgrade and data extraction. They need to upgrade the ETL pipeline.
+
+4. Approach to the product research and design department by providing with them analytic insights related with adherence of each medication and the adherence of different patients. These information would support them optimizing the product and adjusting the product price. 
+
+
+
+
+
